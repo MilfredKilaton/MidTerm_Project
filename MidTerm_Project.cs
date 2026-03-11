@@ -12,6 +12,14 @@ using System.Transactions;
 namespace WorkSpace
 {
 
+    public enum Status
+    {
+        None = 0,
+        Registered,
+        Enrolled,
+        Graded
+    }
+
     public class Student
     {
         public string? Id { get; set; }
@@ -26,7 +34,7 @@ namespace WorkSpace
         public string? Year { get; set; }
         public List<Subject> StudentSubjects { get; set; } = new List<Subject>();
         public List<Grade> StudentGrades { get; set; } = new List<Grade>();
-        public string? Status { get; set; }
+        public Status Status { get; set; }
     }
 
     public class Subject
@@ -84,7 +92,7 @@ namespace WorkSpace
 
                         case var _ when DataStore.StudentList.Count == 0:
                             Console.WriteLine($"Error: {DataStore.StudentList.Count} students are registered. Please register first.");
-
+                            Console.WriteLine("TIP: Go to the first option to register a student.");
                         break;
 
                         case 2:
@@ -121,6 +129,37 @@ namespace WorkSpace
             Console.WriteLine("╚═════════════════════════════╝");
         }
 
+        public static void PreferenceMenu()
+        {
+            Console.Clear();
+            Console.WriteLine("╔══════════════════════════════╗");
+            Console.WriteLine("║    Show Grades by Student    ║");
+            Console.WriteLine("╠══════════════════════════════╣");
+            Console.WriteLine("║   with BSIT course           ║");
+            Console.WriteLine("║   with BSME course           ║");
+            Console.WriteLine("║   Student ID                 ║");
+            Console.WriteLine("║   First Name                 ║");
+            Console.WriteLine("║   Last Name                  ║");
+            Console.WriteLine("╚══════════════════════════════╝");
+        }
+
+        public static void PreferenceHighlighter(int choice)
+        {
+            string[] options = {
+                "║   with BSIT course           ║",
+                "║   with BSME course           ║",
+                "║   Student ID                 ║",
+                "║   First Name                 ║",
+                "║   Last Name                  ║"
+            };
+
+            Console.SetCursorPosition(0, 2 + choice);
+
+            Color(ConsoleColor.Black, ConsoleColor.White);
+            Console.Write($"{options[choice - 1]}".PadRight(Console.WindowWidth - 1));
+            Console.ResetColor();
+        }
+
         static void OptionHighlighter(int choice)
         {
             string[] options = {
@@ -155,14 +194,53 @@ namespace WorkSpace
 
     class Grades
     {
+        public static char KeyBasedPreferences()
+        {
+            int choice = 1;
+
+            TextFile.LoadFromTextFile();
+
+            while (true)
+            {
+                Console.CursorVisible = false;
+                Console.SetCursorPosition(0, 0);
+
+                Program.PreferenceMenu();
+                Program.PreferenceHighlighter(choice);
+
+                ConsoleKeyInfo input = Console.ReadKey(true);
+
+                if (input.Key == ConsoleKey.UpArrow && choice > 1) choice--;
+                else if (input.Key == ConsoleKey.DownArrow && choice < 5) choice++;
+                else if (input.Key == ConsoleKey.Enter)
+                {
+                    Console.Clear();
+                    Console.CursorVisible = true;
+
+                    char preference = choice switch
+                    {
+                        1 => 'A',
+                        2 => 'B',
+                        3 => 'C',
+                        4 => 'D',
+                        5 => 'E',
+                        _ => 'C'
+                    };
+
+                    return preference;
+                }
+            }
+        }
+
         public static void ShowStudentGrade()
         {
             while (true)
             {
+                char preference = Grades.KeyBasedPreferences();
                 Console.Clear();
-                Console.WriteLine("---------- Student Grades ----------");
+                Console.WriteLine("▐════════════ See Student Grades ════════════▌");
 
-                var studentList = DataStore.StudentList.Where(student => student.Status != "Registered").ToList();
+                var studentList = DataStore.StudentList.Where(student => student.Status != Status.Registered).ToList();
 
                 if (studentList.Count == 0)
                 {
@@ -170,44 +248,55 @@ namespace WorkSpace
                     return;
                 }
 
-                char preference;
-
-                Console.WriteLine(" A - Student with BSIT course");
-                Console.WriteLine(" B - Student with BSME course");
-                Console.WriteLine(" C - specific student ID");
-                Console.Write("\nEnter the letter of your preference: ");
-
-                while (!char.TryParse(Console.ReadLine()?.ToUpper(), out preference) || (preference != 'A' && preference != 'B' && preference != 'C'))
-                {
-                    Console.Write("Choose from 1 of the preferences: ");
-                }
-
-                string? studentId = null;
+                string input = string.Empty;
 
                 if (preference == 'C')
                 {
                     Console.Write("\nEnter Student ID: ");
-                    studentId = Console.ReadLine();
+                }
+                else if (preference == 'D')
+                {
+                    Console.Write("\nEnter Student First Name: ");
+                }
+                else if (preference == 'E')
+                {
+                    Console.Write("\nEnter Student Last Name: ");
+                }
+
+                if (preference is ('C' or 'D' or 'E'))
+                {
+                    input = Console.ReadLine() ?? string.Empty;
+
                 }
 
                 var targets = preference switch
                 {
                     'A' => DataStore.StudentList.Where(student => student.Course == "BSIT"),
                     'B' => DataStore.StudentList.Where(student => student.Course == "BSME"),
-                    'C' => DataStore.StudentList.Where(student => student.Id == studentId),
+                    'C' => DataStore.StudentList.Where(student => student.Id == input),
+                    'D' => DataStore.StudentList.Where(student => student.FirstName == input),
+                    'E' => DataStore.StudentList.Where(student => student.LastName == input),
                     _ => Enumerable.Empty<Student>()
                 };
 
-                if (!targets.Any() && (preference == 'A' || preference == 'B'))
+                if (!targets.Any() && (preference is ('A' or 'B')))
                 {
                     string course = preference == 'A' ? "BSIT" : "BSME";
                     Console.WriteLine($"No student record found enrolled in {course}");
                     return;
                 }
 
-                if (!targets.Any() && preference == 'C')
+                string inform = preference switch
                 {
-                    Console.WriteLine("No student record found with the inputted ID.");
+                    'C' => "ID",
+                    'D' => "First Name",
+                    'E' => "Last Name",
+                     _  => "[--How'd you get here.--]"
+                };
+
+                if (!targets.Any() && (preference is ('C' or 'D' or 'E')))
+                {
+                    Console.WriteLine($"No student record found with the inputted {inform}.");
                     return;
                 }
 
@@ -216,10 +305,10 @@ namespace WorkSpace
                 {
                     string properName = $"{target.LastName}, {target.FirstName}";
 
-                    Console.WriteLine("+==========================================================+");
-                    Console.WriteLine($"| {properName,-56} |");
-                    Console.WriteLine($"| {target.Course} - Year {target.Year,-44} |");
-                    Console.WriteLine("|----------------------------------------------------------|");
+                    Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
+                    Console.WriteLine($"║ {properName,-56} ║");
+                    Console.WriteLine($"║ {target.Course} - Year {target.Year,-44} ║");
+                    Console.WriteLine("╠══════════════════════════════════════════════════════════╣");
 
                     foreach (var subject in target.StudentSubjects!)
                     {
@@ -231,10 +320,10 @@ namespace WorkSpace
 
                         string displaySubject = initialSubject.PadRight(50, '-');
 
-                        Console.WriteLine($"| {displaySubject}{displayGrade,6} |");
+                        Console.WriteLine($"║ {displaySubject}{displayGrade,6} ║");
                     }
 
-                    Console.WriteLine("+----------------------------------------------------------+\n");
+                    Console.WriteLine("╚══════════════════════════════════════════════════════════╝\n");
                 }
 
                 char choice = '\0';
@@ -252,9 +341,9 @@ namespace WorkSpace
         public static void StudentGradeProcess()
         {
             Console.Clear();
-            Console.WriteLine("---------- GRADING SYSTEM ----------");
+            Console.WriteLine("▐════════════ GRADING SYSTEM ════════════▌");
 
-            var studentList = DataStore.StudentList.Where(student => student.Status == "Enrolled").ToList();
+            var studentList = DataStore.StudentList.Where(student => student.Status == Status.Enrolled).ToList();
 
             if (studentList.Count == 0)
             {
@@ -267,17 +356,12 @@ namespace WorkSpace
                 Console.WriteLine($"{student.Id} | {student.LastName}, {student.FirstName} | {student.Course}");
             }
 
-            Console.Write("\nStudent ID (enter 'exit' to return): ");
+            Console.Write("\nEnter student: ");
             string inputId = Console.ReadLine() ?? "";
-
-            if (inputId.ToLower() == "exit") 
-            {
-                return; 
-            }
 
             var target = DataStore.StudentList.FirstOrDefault(x => x.Id == inputId);
 
-            if (target?.Status == "Registered")
+            if (target?.Status == Status.Registered)
             {
                 Console.WriteLine("This student has no subjects to be graded.");
                 return;
@@ -296,7 +380,7 @@ namespace WorkSpace
 
             if (allGraded)
             {
-                target.Status = "Graded";
+                target.Status = Status.Enrolled;
             }
         }
 
@@ -403,9 +487,9 @@ namespace WorkSpace
             while (true)
             {
                 Console.Clear();
-                Console.WriteLine("---------- ENROLL STUDENTS ----------");
+                Console.WriteLine("▐════════════ ENROLL STUDENTS ════════════▌");
 
-                var studentList = DataStore.StudentList.Where(x => x.Status == "Registered").ToList();
+                var studentList = DataStore.StudentList.Where(x => x.Status == Status.Registered).ToList();
 
                 if (studentList.Count == 0)
                 {
@@ -413,12 +497,15 @@ namespace WorkSpace
                     return;
                 }
 
+                Console.WriteLine("╔══════════╦══════════════════════╦══════╗");
                 foreach (var student in studentList)
                 {
-                    Console.WriteLine($"{student.Id} | {student.LastName}, {student.FirstName} | {student.Course}");
+                    string properName = $"{student.LastName}, {student.FirstName}";
+                    Console.WriteLine($"║ {student.Id, -8} ║ {properName, -20} ║ {student.Course, -4} ║");
                 }
+                Console.WriteLine("╚══════════╩══════════════════════╩══════╝\n");
 
-                Console.Write("\nStudent ID (enter 'exit' to return): ");
+                Console.Write("\nStudent ID: ");
                 string inputId = Console.ReadLine() ?? "";
 
                 if (inputId.ToLower() == "exit") return;
@@ -431,7 +518,7 @@ namespace WorkSpace
                     return;
                 }
 
-                if (target.Status == "Enrolled")
+                if (target.Status == Status.Enrolled)
                 {
                     Console.WriteLine($"Student {target.FirstName} {target.LastName} already enrolled.");
                     return;
@@ -440,7 +527,7 @@ namespace WorkSpace
                 var subjects = GenerateSubjects(target.Course ?? "");
 
                 target.StudentSubjects = subjects;
-                target.Status = "Enrolled";
+                target.Status = Status.Enrolled;
 
                 TextFile.SaveToTextFile();
 
@@ -572,21 +659,16 @@ namespace WorkSpace
                         contactNumber = input.Replace(" ", String.Empty);
                     } while (contactNumber.Length != 11);
 
-                    while (true)
+
+                    Console.Write(" - Date of Birth (MM/dd/yyyy): ");
+                    while (!DateTime.TryParseExact(Console.ReadLine(), dateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out birthDate))
                     {
-                        Console.Write(" - Date of Birth (MM/dd/yyyy): ");
-                        while (!DateTime.TryParseExact(Console.ReadLine(), dateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out birthDate))
-                        {
-                            Console.Write("Invalid Input. (MM/dd/yyyy): ");
-                        }
-
-                        age = DateTime.Today.Year - birthDate.Year;
-
-                        if (birthDate.Date > DateTime.Today.AddYears(-age)) age--;
-
-                        Console.Write($"[!] Calculated age is {age}. Is this correct? (Y | N): ");
-                        if (Console.ReadLine()?.ToLower() == "y") break;
+                        Console.Write("Invalid Input. (MM/dd/yyyy): ");
                     }
+
+                    age = DateTime.Today.Year - birthDate.Year;
+
+                    if (birthDate.Date > DateTime.Today.AddYears(-age)) age--;
 
                     Console.Write(" - Course (BSIT | BSME): ");
                     course = CourseChecker();
@@ -624,7 +706,7 @@ namespace WorkSpace
                     StudentGrades = new List<Grade>(),
                     Course = course,
                     Year = year,
-                    Status = "Registered"
+                    Status = Status.Registered
 
                 });
 
@@ -680,8 +762,13 @@ namespace WorkSpace
         public static void LoadFromTextFile()
         {
 
-            if (!File.Exists(PathFile)) return;
-            
+            if (!File.Exists(PathFile))
+            {
+                Console.Clear();
+                Console.WriteLine("ERROR: Path file not found.");
+                Console.ReadKey();
+                return;
+            }
             string existingJson = File.ReadAllText(PathFile);
             if (string.IsNullOrWhiteSpace(existingJson)) return;
 

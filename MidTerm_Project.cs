@@ -5,10 +5,20 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Transactions;
 
 namespace WorkSpace
 {
+
+    public enum Status
+    {
+        None = 0,
+        Registered,
+        Enrolled,
+        Graded
+    }
 
     public class Student
     {
@@ -22,15 +32,21 @@ namespace WorkSpace
         public int Age { get; set; }
         public string? Course { get; set; }
         public string? Year { get; set; }
-        public List<Subject>? StudentSubjects { get; set; }
-        public string? Status { get; set; }
+        public List<Subject> StudentSubjects { get; set; } = new List<Subject>();
+        public List<Grade> StudentGrades { get; set; } = new List<Grade>();
+        public Status Status { get; set; }
     }
 
     public class Subject
     {
         public string? Name { get; set; }
-        public int Id { get; set; }
-        public decimal? Grade { get; set; }
+        public string? Id { get; set; }
+    }
+
+    public class Grade
+    {
+        public string? SubjectId { get; set; }
+        public decimal? SubjectGrade { get; set; }
     }
 
     public class DataStore
@@ -44,6 +60,8 @@ namespace WorkSpace
         static void Main()
         {
             int choice = 1;
+
+            TextFile.LoadFromTextFile();
 
             while (true)
             {
@@ -74,7 +92,7 @@ namespace WorkSpace
 
                         case var _ when DataStore.StudentList.Count == 0:
                             Console.WriteLine($"Error: {DataStore.StudentList.Count} students are registered. Please register first.");
-
+                            Console.WriteLine("TIP: Go to the first option to register a student.");
                         break;
 
                         case 2:
@@ -82,11 +100,11 @@ namespace WorkSpace
                         break;
 
                         case 3:
-
+                            Grades.StudentGradeProcess();
                         break;
 
                         case 4:
-
+                            Grades.ShowStudentGrade();
                         break;
                     }
 
@@ -109,6 +127,37 @@ namespace WorkSpace
             Console.WriteLine("║ 4. Show Grades by Student   ║");
             Console.WriteLine("║ 5. Exit                     ║");
             Console.WriteLine("╚═════════════════════════════╝");
+        }
+
+        public static void PreferenceMenu()
+        {
+            Console.Clear();
+            Console.WriteLine("╔══════════════════════════════╗");
+            Console.WriteLine("║    Show Grades by Student    ║");
+            Console.WriteLine("╠══════════════════════════════╣");
+            Console.WriteLine("║   with BSIT course           ║");
+            Console.WriteLine("║   with BSME course           ║");
+            Console.WriteLine("║   Student ID                 ║");
+            Console.WriteLine("║   First Name                 ║");
+            Console.WriteLine("║   Last Name                  ║");
+            Console.WriteLine("╚══════════════════════════════╝");
+        }
+
+        public static void PreferenceHighlighter(int choice)
+        {
+            string[] options = {
+                "║   with BSIT course           ║",
+                "║   with BSME course           ║",
+                "║   Student ID                 ║",
+                "║   First Name                 ║",
+                "║   Last Name                  ║"
+            };
+
+            Console.SetCursorPosition(0, 2 + choice);
+
+            Color(ConsoleColor.Black, ConsoleColor.White);
+            Console.Write($"{options[choice - 1]}".PadRight(Console.WindowWidth - 1));
+            Console.ResetColor();
         }
 
         static void OptionHighlighter(int choice)
@@ -145,32 +194,289 @@ namespace WorkSpace
 
     class Grades
     {
+        public static char KeyBasedPreferences()
+        {
+            int choice = 1;
+
+            TextFile.LoadFromTextFile();
+
+            while (true)
+            {
+                Console.CursorVisible = false;
+                Console.SetCursorPosition(0, 0);
+
+                Program.PreferenceMenu();
+                Program.PreferenceHighlighter(choice);
+
+                ConsoleKeyInfo input = Console.ReadKey(true);
+
+                if (input.Key == ConsoleKey.UpArrow && choice > 1) choice--;
+                else if (input.Key == ConsoleKey.DownArrow && choice < 5) choice++;
+                else if (input.Key == ConsoleKey.Enter)
+                {
+                    Console.Clear();
+                    Console.CursorVisible = true;
+
+                    char preference = choice switch
+                    {
+                        1 => 'A',
+                        2 => 'B',
+                        3 => 'C',
+                        4 => 'D',
+                        5 => 'E',
+                        _ => 'C'
+                    };
+
+                    return preference;
+                }
+            }
+        }
+
+        public static void ShowStudentGrade()
+        {
+            while (true)
+            {
+                char preference = Grades.KeyBasedPreferences();
+                Console.Clear();
+                Console.WriteLine("▐════════════ See Student Grades ════════════▌");
+
+                var studentList = DataStore.StudentList.Where(student => student.Status != Status.Registered).ToList();
+
+                if (studentList.Count == 0)
+                {
+                    Console.Write("No student records found.");
+                    return;
+                }
+
+                string input = string.Empty;
+
+                if (preference == 'C')
+                {
+                    Console.Write("\nEnter Student ID: ");
+                }
+                else if (preference == 'D')
+                {
+                    Console.Write("\nEnter Student First Name: ");
+                }
+                else if (preference == 'E')
+                {
+                    Console.Write("\nEnter Student Last Name: ");
+                }
+
+                if (preference is ('C' or 'D' or 'E'))
+                {
+                    input = Console.ReadLine() ?? string.Empty;
+
+                }
+
+                var targets = preference switch
+                {
+                    'A' => DataStore.StudentList.Where(student => student.Course == "BSIT"),
+                    'B' => DataStore.StudentList.Where(student => student.Course == "BSME"),
+                    'C' => DataStore.StudentList.Where(student => student.Id == input),
+                    'D' => DataStore.StudentList.Where(student => student.FirstName == input),
+                    'E' => DataStore.StudentList.Where(student => student.LastName == input),
+                    _ => Enumerable.Empty<Student>()
+                };
+
+                if (!targets.Any() && (preference is ('A' or 'B')))
+                {
+                    string course = preference == 'A' ? "BSIT" : "BSME";
+                    Console.WriteLine($"No student record found enrolled in {course}");
+                    return;
+                }
+
+                string inform = preference switch
+                {
+                    'C' => "ID",
+                    'D' => "First Name",
+                    'E' => "Last Name",
+                     _  => "[--How'd you get here.--]"
+                };
+
+                if (!targets.Any() && (preference is ('C' or 'D' or 'E')))
+                {
+                    Console.WriteLine($"No student record found with the inputted {inform}.");
+                    return;
+                }
+
+                Console.Clear();
+                foreach (var target in targets)
+                {
+                    string properName = $"{target.LastName}, {target.FirstName}";
+
+                    Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
+                    Console.WriteLine($"║ {properName,-56} ║");
+                    Console.WriteLine($"║ {target.Course} - Year {target.Year,-44} ║");
+                    Console.WriteLine("╠══════════════════════════════════════════════════════════╣");
+
+                    foreach (var subject in target.StudentSubjects!)
+                    {
+                        var grade = target.StudentGrades?.FirstOrDefault(grade => grade.SubjectId == subject.Id);
+
+                        string displayGrade = grade?.SubjectGrade?.ToString("0.0") ?? "N/A";
+
+                        string initialSubject = $"{subject.Name} ";
+
+                        string displaySubject = initialSubject.PadRight(50, '-');
+
+                        Console.WriteLine($"║ {displaySubject}{displayGrade,6} ║");
+                    }
+
+                    Console.WriteLine("╚══════════════════════════════════════════════════════════╝\n");
+                }
+
+                char choice = '\0';
+
+                Console.Write(" \nTry again? (Y | N): ");
+                while (!char.TryParse(Console.ReadLine()?.ToLower(), out choice) && (choice != 'y' || choice != 'n'))
+                {
+                    Console.Write("\nInvalid input. (Y | N) : ");
+                }
+
+                if (choice == 'n') return;
+            }
+        }
+
         public static void StudentGradeProcess()
         {
             Console.Clear();
-            Console.WriteLine("---------- GRADING SYSTEM ----------");
-            foreach (var student in DataStore.StudentList)
+            Console.WriteLine("▐════════════ GRADING SYSTEM ════════════▌");
+
+            var studentList = DataStore.StudentList.Where(student => student.Status == Status.Enrolled).ToList();
+
+            if (studentList.Count == 0)
             {
-                var gradedStudents = DataStore.StudentList.Where(student => student.Status == "Graded");
-                var enrolledStudents = DataStore.StudentList.Where(student => student.Status == "Enrolled");
-
-                string properName = $"{student.LastName}, {student.FirstName}";
-
-                Console.WriteLine("Graded Students: ");
-                foreach(var gradedStudent in gradedStudents)
-                {
-                    Console.WriteLine($"| ID: {student.Id, -8} | Name: {properName, -30} | Course: {student.Course, -4} |");
-                }
-                Console.WriteLine("-------------------------------------------------------");
-
-                Console.WriteLine("To be graded Students: ");
-                foreach (var enrolledStudent in enrolledStudents)
-                {
-                    Console.WriteLine($"| ID: {student.Id, -8} | Name: {properName, -30} | Course: {student.Course, -4} |");
-                }
-
-
+                Console.Write("All students are either graded or no records found.");
+                return;
             }
+
+            foreach (var student in studentList)
+            {
+                Console.WriteLine($"{student.Id} | {student.LastName}, {student.FirstName} | {student.Course}");
+            }
+
+            Console.Write("\nEnter student: ");
+            string inputId = Console.ReadLine() ?? "";
+
+            var target = DataStore.StudentList.FirstOrDefault(x => x.Id == inputId);
+
+            if (target?.Status == Status.Registered)
+            {
+                Console.WriteLine("This student has no subjects to be graded.");
+                return;
+            }
+
+            if (target == null)
+            {
+                Console.WriteLine("Student not found.");
+                return;
+            }
+
+            StudentGrader(target);
+
+            bool allGraded = target.StudentSubjects != null 
+                && target.StudentSubjects.All(s => target.StudentGrades?.Any(g => g.SubjectId == s.Id) == true);
+
+            if (allGraded)
+            {
+                target.Status = Status.Enrolled;
+            }
+        }
+
+        static void StudentGrader(Student student)
+        {
+            while (true)
+            {
+                Console.Clear();
+                Console.WriteLine($"{student.LastName}, {student.FirstName}");
+                Console.WriteLine("");
+
+                for (int i = 0; i < student.StudentSubjects!.Count; i++)
+                {
+                    var sub = student.StudentSubjects[i];
+
+                    var toBeGraded = student.StudentGrades?.FirstOrDefault(g => g.SubjectId == sub.Id);
+
+                    string gradeText = toBeGraded != null && toBeGraded.SubjectGrade.HasValue ? toBeGraded.SubjectGrade.Value.ToString() : "Not Graded";
+
+                    Console.WriteLine($"{i + 1 + ".", -3} {sub.Id, -12} - {sub.Name, -42} | {gradeText}");
+                }
+
+                Console.WriteLine("\n0. Exit grading");
+
+                Console.Write("\nChoose subject number: ");
+
+                int choice;
+                if (!int.TryParse(Console.ReadLine(), out choice))
+                    continue;
+
+                if (choice == 0)
+                    break;
+
+                if (choice < 1 || choice > student.StudentSubjects.Count)
+                    continue;
+
+                var subject = student.StudentSubjects[choice - 1];
+
+                decimal temporaryGrade = 0;
+
+                Console.Write($"Enter grade for {subject.Name}; 50 - 100:\n > ");
+                while (!decimal.TryParse(Console.ReadLine(), out temporaryGrade) || temporaryGrade < 50)
+                {
+                    Console.Write("Enter a number from 50 to 100:\n > ");
+                }
+
+                string input = GradeConverter(temporaryGrade);
+
+                if (string.IsNullOrWhiteSpace(input))
+                    continue;
+
+                decimal grade;
+
+                while (!decimal.TryParse(input, out grade))
+                {
+                    Console.Write("Invalid grade. Try again: ");
+                    input = Console.ReadLine() ?? "";
+                }
+
+                var existingGrade = student.StudentGrades?.FirstOrDefault(grade => grade.SubjectId == subject.Id);
+
+                if (existingGrade != null)
+                {
+                    existingGrade.SubjectGrade = grade;
+                }
+                else
+                {
+                    student.StudentGrades?.Add(new Grade
+                    {
+                        SubjectId = subject.Id,
+                        SubjectGrade = grade
+                    });
+                }
+
+                TextFile.SaveToTextFile();
+            }
+
+        }
+
+        static string GradeConverter(decimal grade)
+        {
+            string convertedGrade = grade switch
+            {
+                >= 97 => Convert.ToString(1.00m),
+                >= 94 => Convert.ToString(1.25m),
+                >= 91 => Convert.ToString(1.50m),
+                >= 88 => Convert.ToString(1.75m),
+                >= 85 => Convert.ToString(2.00m),
+                >= 82 => Convert.ToString(2.25m),
+                >= 79 => Convert.ToString(2.50m),
+                >= 76 => Convert.ToString(2.75m),
+                >= 75 => Convert.ToString(3.00m),
+                _     => Convert.ToString(5.00m)
+            };
+
+            return convertedGrade;
         }
     }
 
@@ -181,102 +487,93 @@ namespace WorkSpace
             while (true)
             {
                 Console.Clear();
-                Console.WriteLine("---------- ENROLLING SYSTEM ----------");
+                Console.WriteLine("▐════════════ ENROLL STUDENTS ════════════▌");
 
-                foreach (var student in DataStore.StudentList.Where(student => student.Status == "Registered"))
+                var studentList = DataStore.StudentList.Where(x => x.Status == Status.Registered).ToList();
+
+                if (studentList.Count == 0)
                 {
-                    string properName = $"{student.LastName}, {student.FirstName}";
-
-                    Console.WriteLine($"| {properName, -36} |");
-                    Console.WriteLine($"| {student.Id, -10} | {student.Course, -4} | {student.Year,-11} | {student.Age,-2} |");
-                }
-
-                Console.WriteLine("------------ Welcome to enrolling student subjects ------------");
-                Console.Write("Enter student ID: ");
-                string idToFind = Console.ReadLine() ?? string.Empty;
-
-                var selectedStudent = DataStore.StudentList.FirstOrDefault(student => student.Id == idToFind && student.Status == "Registered");
-
-                
-
-                foreach (var student in selectedStudent?.Status!)
-                {
-                    Console.WriteLine($"{selectedStudent.FirstName} - {selectedStudent.Status}");
-                }
-
-                if (selectedStudent == null)
-                {
-                    Console.WriteLine($"No student with an ID of {idToFind} was found. . .");
+                    Console.Write("All students are either been enrolled or no student records found.");
                     return;
                 }
 
-                if (selectedStudent.Status == "Enrolled")
+                Console.WriteLine("╔══════════╦══════════════════════╦══════╗");
+                foreach (var student in studentList)
                 {
-                    Console.WriteLine($"This student has already been enrolled with the following subjects: ");
-                    foreach (var subject in DataStore.SubjectList)
-                    {
-                        Console.WriteLine($"Subject ID: {subject.Id} | Subject Name: {subject.Name}");
-                        Console.ReadKey();
-                        return;
-                    }
+                    string properName = $"{student.LastName}, {student.FirstName}";
+                    Console.WriteLine($"║ {student.Id, -8} ║ {properName, -20} ║ {student.Course, -4} ║");
+                }
+                Console.WriteLine("╚══════════╩══════════════════════╩══════╝\n");
+
+                Console.Write("\nStudent ID: ");
+                string inputId = Console.ReadLine() ?? "";
+
+                if (inputId.ToLower() == "exit") return;
+
+                var target = DataStore.StudentList.FirstOrDefault(x => x.Id == inputId);
+
+                if (target == null)
+                {
+                    Console.WriteLine("Student not found.");
+                    return;
                 }
 
-                int index = DataStore.StudentList.FindIndex(student => student.Id == idToFind && student.Status == "Registered");
+                if (target.Status == Status.Enrolled)
+                {
+                    Console.WriteLine($"Student {target.FirstName} {target.LastName} already enrolled.");
+                    return;
+                }
 
-                Console.Clear();
-                Console.WriteLine($"Student Found: {selectedStudent?.FirstName} {selectedStudent?.LastName}");
-                Console.WriteLine($"Course: {selectedStudent?.Course} | Year: {selectedStudent?.Year}");
-                Console.WriteLine($"---------------------------------------------------------");
+                var subjects = GenerateSubjects(target.Course ?? "");
 
-                List<Subject> subjects = SubjectChecker(selectedStudent?.StudentSubjects!, selectedStudent?.Course!);
+                target.StudentSubjects = subjects;
+                target.Status = Status.Enrolled;
 
-                DataStore.StudentList.Add(new Student { StudentSubjects = subjects, Status = "Enrolled" });
+                TextFile.SaveToTextFile();
 
-                selectedStudent?.Status!.Insert(index, "Enrolled");
+                Console.WriteLine($"\n{target.FirstName} {target.LastName} successfully enrolled.");
 
-                
-
-                Console.WriteLine($"Student {selectedStudent?.LastName} has been enrolled with the following subjects:");
                 foreach (var subject in subjects)
                 {
-                    Console.WriteLine($"Subject ID: {subject.Id} | Subject Name: {subject.Name}");
+                    Console.WriteLine($"{subject.Id} - {subject.Name}");
                 }
-
-
-                Console.Write("Try again? (Enter 'exit' to return): ");
-                if (Console.ReadLine()?.ToLower() == "exit") break;
+                Console.ReadKey();
             }
-            
         }
 
-        static List<Subject> SubjectChecker(List<Subject> subject, string course)
+        static List<Subject> GenerateSubjects(string course)
         {
-            subject = new List<Subject>();
+            List<Subject> subjects = new List<Subject>();
 
-            string[] bsitSubjects = { "PathFit 1", "Introduction to Computer", "The Works of Rizal", "HCI" };
-            int[] bsitSubjectsId = { 101, 102, 103, 104 };
-
-            string[] bsmeSubjects = { "PathFit 1", "Fluid Mechanics", "The Works of Rizal", "Thermodynamics" };
-            int[] bsmeSubjectsId = { 201, 202, 203, 204 };
-
-            switch (course.ToUpper()) // System.NullReferenceException: 'Object reference not set to an instance of an object.' course was null.
+            if (course.ToUpper() == "BSIT")
             {
-                case "BSIT":
-                    for (int i = 0; i < bsitSubjects.Length; i++)
-                    {
-                        subject.Add(new Subject { Name = bsitSubjects[i], Id = bsitSubjectsId[i] });
-                    }
-                    break;
-
-                case "BSME":
-                    for (int i = 0; i < bsmeSubjects.Length; i++)
-                    {
-                        subject.Add(new Subject { Name = bsmeSubjects[i], Id = bsmeSubjectsId[i] });
-                    }
-                    break;
+                subjects.Add(new Subject { Id = "COMP 102IT", Name = "Computer Applications" });
+                subjects.Add(new Subject { Id = "IT 104A", Name = "Computer Programmin 2, Lec." });
+                subjects.Add(new Subject { Id = "IT 104B", Name = "Computer Programming 2, Lab." });
+                subjects.Add(new Subject { Id = "IT 105A", Name = "Platform Technologies" });
+                subjects.Add(new Subject { Id = "IT 106A", Name = "IT Social and Professional Issues" });
+                subjects.Add(new Subject { Id = "GEC 103A", Name = "Understanding the Self" });
+                subjects.Add(new Subject { Id = "GEC 104A", Name = "Arts Appreciation" });
+                subjects.Add(new Subject { Id = "RZL 104A", Name = "Life and Works of Rizal" });
+                subjects.Add(new Subject { Id = "PE 102A", Name = "Physical Education 2" });
+                subjects.Add(new Subject { Id = "THEO 102A", Name = "Scriptures, the Sacraments and the Liturgy" });
+            }
+            else if (course.ToUpper() == "BSME")
+            {
+                subjects.Add(new Subject { Id = "ME 201A", Name = "Engineering Mechanics - Statics" });
+                subjects.Add(new Subject { Id = "ME 202A", Name = "Engineering Mechanics - Dynamics" });
+                subjects.Add(new Subject { Id = "ME 203A", Name = "Thermodynamics 1" });
+                subjects.Add(new Subject { Id = "ME 204A", Name = "Materials Science for Engineers" });
+                subjects.Add(new Subject { Id = "ME 205B", Name = "Mechanical Engineering Drawing, Lab." });
+                subjects.Add(new Subject { Id = "MATH 203A", Name = "Differential Equations" });
+                subjects.Add(new Subject { Id = "PHY 204A", Name = "Engineering Physics" });
+                subjects.Add(new Subject { Id = "GEC 105A", Name = "Science, Technology and Society" });
+                subjects.Add(new Subject { Id = "RZL 105A", Name = "Life and Works of Rizal" });
+                subjects.Add(new Subject { Id = "PE 103A", Name = "Physical Education 3" });
+                subjects.Add(new Subject { Id = "THEO 103A", Name = "Christian Moral Principles" });
             }
 
-            return subject;
+            return subjects;
         }
     }
 
@@ -308,7 +605,7 @@ namespace WorkSpace
 
                     Console.WriteLine("Enter student informations: ");
 
-                    Console.Write("Unique ID: ");
+                    Console.Write(" - Unique ID: ");
                     while (true)
                     {
                         newStudentId = Console.ReadLine()?.ToLower() ?? string.Empty;
@@ -335,56 +632,51 @@ namespace WorkSpace
                         }
                     }
 
-                    Console.Write("First Name: ");
+                    Console.Write(" - First Name: ");
                     firstName = Console.ReadLine() ?? string.Empty;
 
                     string input = "Place Holder";
                     do
                     {
-                        Console.Write("Middle Initial (N/A if none): ");
+                        Console.Write(" - Middle Initial (N/A if none): ");
                         input = Console.ReadLine()?.ToUpper() ?? string.Empty;
 
                     } while (input != "N/A" && !(input.Length == 1 && char.IsLetter(input[0])));
 
                     middleInitial = input;
 
-                    Console.Write("Last Name: ");
+                    Console.Write(" - Last Name: ");
                     lastName = Console.ReadLine() ?? string.Empty;
 
-                    Console.Write("Address: ");
+                    Console.Write(" - Address: ");
                     address = Console.ReadLine() ?? string.Empty;
 
                     do
                     {
-                        Console.Write("11 Digits required.\nContact Number: ");
+                        Console.Write(" - (11 Digits required) Contact Number: ");
                         input = Console.ReadLine() ?? string.Empty;
 
                         contactNumber = input.Replace(" ", String.Empty);
                     } while (contactNumber.Length != 11);
 
-                    while (true)
+
+                    Console.Write(" - Date of Birth (MM/dd/yyyy): ");
+                    while (!DateTime.TryParseExact(Console.ReadLine(), dateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out birthDate))
                     {
-                        Console.Write("Date of Birth (MM/dd/yyyy): ");
-                        while (!DateTime.TryParseExact(Console.ReadLine(), dateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out birthDate))
-                        {
-                            Console.Write("Invalid Input. (MM/dd/yyyy): ");
-                        }
-
-                        age = DateTime.Today.Year - birthDate.Year;
-
-                        if (birthDate.Date > DateTime.Today.AddYears(-age)) age--;
-
-                        Console.Write($"Calculated age is {age}. Is this correct? (Y | N): ");
-                        if (Console.ReadLine()?.ToLower() == "y") break;
+                        Console.Write("Invalid Input. (MM/dd/yyyy): ");
                     }
 
-                    Console.Write("Course (BSIT | BSME): ");
+                    age = DateTime.Today.Year - birthDate.Year;
+
+                    if (birthDate.Date > DateTime.Today.AddYears(-age)) age--;
+
+                    Console.Write(" - Course (BSIT | BSME): ");
                     course = CourseChecker();
 
                     year = YearChecker();
                     while (true)
                     {
-                        Console.Write($"You've inputted {year}. Is this correct? (Y/N): ");
+                        Console.Write($"[!] {year}. Is this correct? (Y | N): ");
                         string confirmation = Console.ReadLine()?.ToLower() ?? string.Empty;
 
                         if (confirmation == "y") break;
@@ -400,7 +692,7 @@ namespace WorkSpace
                     Console.WriteLine($"Unexpected Error: {ex.Message}");
                 }
 
-                string jsonString = JsonSerializer.Serialize(new Student
+                DataStore.StudentList.Add(new Student
                 {
                     Id = newStudentId,
                     FirstName = firstName,
@@ -410,25 +702,25 @@ namespace WorkSpace
                     Address = address,
                     ContactNumber = contactNumber,
                     BirthDate = birthDate,
+                    StudentSubjects = new List<Subject>(),
+                    StudentGrades = new List<Grade>(),
                     Course = course,
                     Year = year,
-                    Status = "Registered"
+                    Status = Status.Registered
 
-                }, new JsonSerializerOptions { WriteIndented = true });
+                });
 
-                TextFile.TextFileAppender(jsonString);
-
-
+                TextFile.SaveToTextFile();
 
                 char choice = '\0';
 
-                Console.Write("\n\nInsert Another Student? (Y | N): ");
+                Console.Write(" \nInsert Another Student? (Y | N): ");
                 while (!char.TryParse(Console.ReadLine()?.ToLower(), out choice) && (choice != 'y' || choice != 'n'))
                 {
                     Console.Write("\nInvalid input. (Y | N) : ");
                 }
 
-                if (choice == 'n') break;
+                if (choice == 'n') return;
             }
         }
 
@@ -452,7 +744,7 @@ namespace WorkSpace
 
             do
             {
-                Console.Write("Starting year: ");
+                Console.Write(" - Starting year: ");
                 int.TryParse(Console.ReadLine(), out startingYear);
 
             } while (startingYear.ToString().Length != 4 || startingYear < 2000);
@@ -465,17 +757,31 @@ namespace WorkSpace
 
     class TextFile
     {
-        public static void TextFileAppender(string jsonString)
+        private const string PathFile = "C:\\Users\\You Are\\Documents\\CSharp\\MiniProject\\MiniProject\\Student_Information_List.txt";
+        
+        public static void LoadFromTextFile()
         {
-            string pathFile = "C:\\Users\\You Are\\Documents\\CSharp\\MiniProject\\MiniProject\\Student_Information_List.txt";
 
-            string existingFile = File.ReadAllText(pathFile);
-
-            using (StreamWriter writer = new StreamWriter(pathFile, true))
+            if (!File.Exists(PathFile))
             {
-                writer.WriteLine(jsonString);
+                Console.Clear();
+                Console.WriteLine("ERROR: Path file not found.");
+                Console.ReadKey();
+                return;
             }
+            string existingJson = File.ReadAllText(PathFile);
+            if (string.IsNullOrWhiteSpace(existingJson)) return;
 
+            DataStore.StudentList = JsonSerializer.Deserialize<List<Student>>(existingJson) ?? new List<Student>();
+        }
+
+        public static void SaveToTextFile()
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+
+            string jsonString = JsonSerializer.Serialize(DataStore.StudentList, options);
+
+            File.WriteAllText(PathFile, jsonString);
         }
     }
 }
